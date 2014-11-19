@@ -22,7 +22,7 @@ BOOTSTRAP_NODES = [
 
 TID_LENGTH = 4
 RE_JOIN_DHT_INTERVAL = 10
-THREAD_NUMBER = 5
+THREAD_NUMBER = 3
 
 def initialLog():
 
@@ -84,7 +84,6 @@ class DHT(Thread):
         self.table = KTable()
         self.ufd = socket.socket(socket.AF_INET,socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.ufd.bind((self.bind_ip, self.bind_port))
-
         self.server_thread=Thread(target=self.server)
         self.client_thread=Thread(target=self.client)
         self.server_thread.daemon=True
@@ -105,9 +104,26 @@ class DHT(Thread):
             try:
                 (data, address) = self.ufd.recvfrom(65536)
                 msg = bdecode(data)
+                stdger.debug("receive udp packet")
                 self.on_message(msg, address)
             except Exception:
                 pass
+
+    def client(self):
+        while self.isClientWorking:
+
+            for node in list(set(self.table.nodes))[:self.max_node_qsize]:
+                stdger.debug("send packet")
+                self.send_find_node((node.ip, node.port), node.nid)
+
+            #is the list in python thread-safe
+            size = len(self.table.nodes)
+            head = size-self.max_node_qsize
+
+            if head < 0:
+                head = 0
+            self.table.nodes = self.table.nodes[head : size]
+            sleep(1)
 
     def on_message(self, msg, address):
         try:
@@ -150,13 +166,7 @@ class DHT(Thread):
         for address in BOOTSTRAP_NODES: 
             self.send_find_node(address)
 
-    def client(self):
-        while self.isClientWorking:
 
-            for node in list(set(self.table.nodes))[:self.max_node_qsize]:
-                self.send_find_node((node.ip, node.port), node.nid)
-            self.table.nodes = []
-            sleep(1)
 
     def play_dead(self, tid, address):
         msg = dict(
@@ -238,7 +248,8 @@ if __name__ == "__main__":
         threads.append(dht)
         sleep(1)
 
-    sleep(60*60)
+
+    sleep(60*60*6)
 
     k = 0
     for i in threads:
