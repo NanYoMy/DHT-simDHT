@@ -11,8 +11,8 @@ from threading import Timer, Thread
 from time import sleep
 from bencode import bencode, bdecode
 
-stdger=logging.getLogger("std_log")
-fileger=logging.getLogger("file_log")
+stdger = logging.getLogger("std_log")
+fileger = logging.getLogger("file_log")
 
 BOOTSTRAP_NODES = [
     ("router.bittorrent.com", 6881),
@@ -22,6 +22,7 @@ BOOTSTRAP_NODES = [
 
 TID_LENGTH = 4
 RE_JOIN_DHT_INTERVAL = 10
+THREAD_NUMBER = 5
 
 def initialLog():
 
@@ -74,6 +75,8 @@ class DHT(Thread):
         Thread.__init__(self)
 
         self.setDaemon(True)
+        self.isServerWorking = True
+        self.isClientWorking = True
         self.master = master
         self.bind_ip = bind_ip
         self.bind_port = bind_port
@@ -81,15 +84,24 @@ class DHT(Thread):
         self.table = KTable()
         self.ufd = socket.socket(socket.AF_INET,socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         self.ufd.bind((self.bind_ip, self.bind_port))
+
+        self.server_thread=Thread(target=self.server)
+        self.client_thread=Thread(target=self.client)
+        self.server_thread.daemon=True
+        self.client_thread.daemon=True
+
         timer(RE_JOIN_DHT_INTERVAL, self.join_DHT)
 
     def start(self):
+        self.server_thread.start()
+        self.client_thread.start()
         Thread.start(self)
         return self
 
-    def run(self):
+    def server(self):
         self.join_DHT()
-        while True:
+        while self.isServerWorking:
+
             try:
                 (data, address) = self.ufd.recvfrom(65536)
                 msg = bdecode(data)
@@ -138,8 +150,9 @@ class DHT(Thread):
         for address in BOOTSTRAP_NODES: 
             self.send_find_node(address)
 
-    def wander(self):
-        while True:
+    def client(self):
+        while self.isClientWorking:
+
             for node in list(set(self.table.nodes))[:self.max_node_qsize]:
                 self.send_find_node((node.ip, node.port), node.nid)
             self.table.nodes = []
@@ -179,6 +192,10 @@ class DHT(Thread):
         except KeyError, e:
             pass
 
+    def stop(self):
+        self.isClientWorking = False
+        self.isServerWorking = False
+
 class KTable():
     def __init__(self):
         self.nid = random_id()
@@ -205,7 +222,6 @@ class KNode(object):
 class Master(object):
 
     def log(self, infohash, address=None):
-        #print "%s from %s:%s" % (infohash.encode("hex"), address[0], address[1])
         stdger.debug("%s from %s:%s" % (infohash.encode("hex"), address[0], address[1]))
         fileger.debug('%s from %s:%s' % (infohash.encode('hex').upper(),address[0],address[1]))
 
@@ -213,4 +229,20 @@ class Master(object):
 if __name__ == "__main__":
     #max_node_qsize bigger, bandwith bigger, spped higher
     initialLog()
-    DHT(Master(), "0.0.0.0", 6681, max_node_qsize=1000).start().wander()
+    threads = []
+    for i in xrange(THREAD_NUMBER):
+        port = i+9500
+        stdger.debug("start thread %d" % port)
+        dht=DHT(Master(), "0.0.0.0", port, max_node_qsize=1000)
+        dht.start()
+        threads.append(dht)
+        sleep(1)
+
+    sleep(60*60)
+
+    k = 0
+    for i in threads:
+        stdger.debug("stop thread %d" % k)
+        i.stop()
+        i.join()
+        k=k+1
