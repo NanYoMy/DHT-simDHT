@@ -12,5 +12,5 @@ To run this code, you need three step
 3. run it
 
 
-a more functional version of DHT crawler is located here "https://github.com/NanYoMy/DHT-woodworm". find all Magenet linker distributed in  DHT newtwokr.
+a more functional version of DHT crawler is located here "https://github.com/NanYoMy/DHT-woodworm". find all Magenet linkers distributed in  DHT network.
 
